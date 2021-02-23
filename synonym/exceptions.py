@@ -1,37 +1,57 @@
 # exception & error 정의
 
 
-__all__ = ['DataBaseModelError',
+__all__ = ['ConnectionError',
            'InstanciateError',
            'ImproperlyDataStructureError',
            'ResponseModelError',
            'FilterError',
            'OrderByError']
 
+class BaseException(Exception):
 
-class DataBaseModelError(Exception):
-    """Error related with Database"""
+    @property
+    def error(self):
+        return self.args[0]
 
+    @property
+    def info(self):
+        return self.args[1]
 
-class InstanciateError(DataBaseModelError):
+class ConnectionError(BaseException):
+
+    """
+    related with sqlalchemy error
+    """
+
+class InstanciateError(ConnectionError):
     """sqlalchemy Model Instanciate Error
-    500 error
     """
 
-class FilterError(DataBaseModelError):
+class FilterError(ConnectionError):
     """sqlalchemy Improperly made filter error
-
     """
 
-class OrderByError(DataBaseModelError):
+class OrderByError(ConnectionError):
     """sqlalchemy Improperly made order by error
-    500 error
     """
 
-class ImproperlyDataStructureError(Exception):
+class UpdateError(ConnectionError):
+    """sqlalchemy Improperly made order by error
+    """
+
+
+class ImproperlyDataStructureError(BaseException):
     """Improperly structured data error
-    500 error
     """
 
-class ResponseModelError(Exception):
+
+class ResponseError(BaseException):
     """Error related with Response Model"""
+
+
+class ResponseModelError(ResponseError):
+    """Error related with Response Model"""
+
+class DeserializerError(ResponseError):
+    """Deserializer Error"""

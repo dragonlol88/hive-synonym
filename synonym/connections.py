@@ -8,11 +8,11 @@ from sqlalchemy.orm import Session
 
 from elasticsearch import Elasticsearch
 from .exceptions import (
-    DataBaseModelError,
     InstanciateError,
     ImproperlyDataStructureError,
     FilterError,
-    OrderByError
+    OrderByError,
+    UpdateError
 )
 
 def is_many(fields):
@@ -43,7 +43,7 @@ class Connection:
     def update(self, model, mapping, relations, filter, **options):
         raise NotImplementedError
 
-    def delete(self):
+    def delete(self, model, mapping, relations, filter, **options):
         raise NotImplementedError
 
 
@@ -67,7 +67,7 @@ class DBConnection(Connection):
             model_inst = model(**fields)
         except Exception as e:
             """instanciate Error"""
-            raise InstanciateError("Cant not Instanciate %s" % (model))
+            raise InstanciateError("Cant not Instanciate %s" % (model), e.args[0])
 
         if rels is not None:
             for rel, rel_cls_ in rels.items():
@@ -86,7 +86,7 @@ class DBConnection(Connection):
                         rel_attrs.append(rel_inst)
                 except Exception as e:
                     """instanciate Error"""
-                    raise InstanciateError("Cant not Instanciate %s" % (rel_cls))
+                    raise InstanciateError("Cant not Instanciate %s" % (rel_cls), e.args[0])
 
         self.session.add(model_inst)
         return model_inst
@@ -97,15 +97,15 @@ class DBConnection(Connection):
         if filter is not None:
             try:
                 query = self._apply_filter(query, filter)
-            except :
-                raise FilterError("Filter is improperly made")
+            except Exception as e:
+                raise FilterError("Filter is improperly made", e.args[0])
 
         #order by 적용
         if order_by:
             try:
                 query = self._apply_order_by(query, model, order_by)
-            except:
-                raise OrderByError("Order by is improperly made")
+            except Exception as e:
+                raise OrderByError("Order by is improperly made", e.args[0])
 
         response = query.all()
         return response
@@ -118,8 +118,8 @@ class DBConnection(Connection):
         if filter is not None:
             try:
                 query = self._apply_filter(query, filter)
-            except :
-                raise FilterError("Filter is improperly made")
+            except Exception as e:
+                raise FilterError("Filter is improperly made", e.args[0])
 
         _, fields = self._resolve_mapping(mapping)
         response = query.all()
@@ -128,9 +128,27 @@ class DBConnection(Connection):
         except Exception as e:
             """update error 
                 invalid type 등등"""
-            raise Exception
-
+            raise UpdateError('Can not be updated', e.args[0])
         return response
+
+    def delete(self, model, mapping, relations, filter, **options):
+
+
+        query = self.session.query(model)
+        #filter 적용
+        if filter is not None:
+            try:
+                query = self._apply_filter(query, filter)
+            except Exception as e:
+                raise FilterError("Filter is improperly made", e.args[0])
+
+        responses = query.all()
+        for query in responses:
+            self.session.delete(query)
+
+
+        return responses
+
 
     def _update_items(self,
                       response: typing.List['MODEL'],

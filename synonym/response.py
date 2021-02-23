@@ -1,3 +1,4 @@
+import re
 import typing
 from pydantic import BaseModel
 from datetime import datetime
@@ -19,6 +20,11 @@ class Response(BaseModel):
         """
         return resp
 
+class UserResponse(Response):
+    id: int
+    user_id: str
+    password: str
+    created_at: datetime
 
 class ProjectResponse(Response):
     id: int
@@ -35,7 +41,7 @@ class ProjectUserResponse(Response):
 class CategoryResponse(Response):
 
     id: int
-    cartegory_name: str
+    category_name: str
     pjt_id: int
     created_at: datetime
     updated_at: datetime
@@ -44,31 +50,41 @@ class SynonymResponse(Response):
     id: int
     origin_id: int
     pjt_id: int
-    cartegory_id: int
+    category_id: int
     synm_keyword: str
     created_at: datetime
 
 class OriginResponse(Response):
 
     id: int
-    cartegory_id: int
+    category_id: int
+    category_id: int
     origin_keyword: str
     created_at: datetime
     updated_at: datetime
     synonym: typing.List[SynonymResponse]
 
-def project_find_post_process(response):
+def project_find_pre_process(response, **options):
 
+    pjt_name = options.pop("pjt_name", None)
     if len(response) == 0:
         """검색데이터가 없을 시"""
         raise ValueError
 
-    response = [getattr(inst, 'project') for inst in response]
+    response = [inst.project for inst in response]
+    new_response = []
 
+    if pjt_name:
+        #pjt_name 있을 시 pjt_name으로 필터링 하기
+        for resp in response:
+            is_target = re.search(pjt_name, resp.pjt_name)
+            if is_target:
+                new_response.append(resp)
+        response = new_response
     return sorted(response, key=lambda x: getattr(x, 'updated_at'), reverse=False)
 
 
-def update_pre_process(response):
+def update_pre_process(response, **options):
     if not response:
         return response
     return response[0]

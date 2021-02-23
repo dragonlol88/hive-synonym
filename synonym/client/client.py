@@ -25,22 +25,42 @@ class DBClient(BaseClient):
     def hosts(self):
         ip = self.client.ip
         port = self.client.port
-        pwd = 'chldydtjs1#'
-        user_id = 'sunny'
-        dev = 'es-synonym'
+        pwd = 'elastic!@#'
+        user_id = 'ta_dev'
+        dev = 'elastic_synonym'
         url = f'mysql+pymysql://{user_id}:{pwd}@{ip}/{dev}'
         return url
 
+    @db_params(model='User')
+    def user(self,
+             action: str,
+             model: 'MODEL',
+             mapping: typing.Dict[str, typing.Any],
+             relations: typing.Optional[typing.Dict[str, typing.Any]] = None,
+             response_model: typing.Optional['SCHEMA'] = None,
+             filter=None,
+             order_by=None,
+             **kwargs):
+
+        return self.handler.perform(action,
+                                    model=model,
+                                    mapping=mapping,
+                                    relations=relations,
+                                    response_model=response_model,
+                                    filter=filter,
+                                    order_by=order_by,
+                                    **kwargs)
+
     @db_params(model='Project')
     def project(self,
-               action: str,
-               model: 'MODEL',
-               mapping: typing.Dict[str, typing.Any],
-               relations: typing.Optional[typing.Dict[str, typing.Any]] = None,
-               response_model: typing.Optional['SCHEMA'] = None,
-               filter=None,
-               order_by=None,
-               **kwargs):
+                action: str,
+                model: 'MODEL',
+                mapping: typing.Dict[str, typing.Any],
+                relations: typing.Optional[typing.Dict[str, typing.Any]] = None,
+                response_model: typing.Optional['SCHEMA'] = None,
+                filter=None,
+                order_by=None,
+                **kwargs):
         # find는 불가
 
         return self.handler.perform(action,
@@ -53,15 +73,15 @@ class DBClient(BaseClient):
                                     **kwargs)
 
     @db_params(model='ProjectUser') # ismine 옵션 적용시
-    def find_project(self,
-                     action,
-                     model,
-                     mapping,
-                     relations,
-                     response_model=None,
-                     filter=None,
-                     order_by=None,
-                     **kwargs):
+    def find_project_per_user(self,
+                              action,
+                              model,
+                              mapping,
+                              relations,
+                              response_model=None,
+                              filter=None,
+                              order_by=None,
+                              **kwargs):
         return self.handler.perform(action,
                                     model=model,
                                     mapping=mapping,
@@ -70,6 +90,9 @@ class DBClient(BaseClient):
                                     filter=filter,
                                     order_by=order_by,
                                     **kwargs)
+
+
+
     @db_params(model='User',
                fields=['user_id', 'user'])
     def create_user(self, action, model, mapping,
@@ -84,7 +107,7 @@ class DBClient(BaseClient):
                                     **kwargs)
 
     @db_params(model='Cartegory')
-    def cartegory(self, action, model, mapping,
+    def category(self, action, model, mapping,
                   relations=None, response_model=None, filter=None, order_by=None, **kwargs):
 
         return self.handler.perform(action,

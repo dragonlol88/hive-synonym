@@ -52,10 +52,10 @@ def _resolve_params(mn, fds, **params):
 
     return model, models, rels
 
-def _make_fileter(model: 'MODEL',
+def _make_filter(model: 'MODEL',
                   where: typing.List[typing.Union[str, typing.Tuple[str, str]]],
                   **kwargs):
-    if where is None:
+    if not where:
         return None
 
     and_or = None
@@ -70,7 +70,6 @@ def _make_fileter(model: 'MODEL',
             fv = kwargs[field]  # field value
             mf = getattr(model, field)  # model field
             if op == 'on_off':
-
                 on_off = kwargs[op]
                 is_on = on_off[field]
                 if is_on:
@@ -78,6 +77,8 @@ def _make_fileter(model: 'MODEL',
                 else:
                     filter.append(mf != fv)
             else:
+                if op == 'like':
+                    fv = f'%{fv}%'
                 op = getattr(mf, op)
                 filter.append(op(fv))
         else:
@@ -97,7 +98,7 @@ def _prepare_interface(model, fields, **kwargs):
     if not rels:
         rels = None
 
-    filter = _make_fileter(model, where, **kwargs)
+    filter = _make_filter(model, where, **kwargs)
 
     return model, mapping, rels, filter
 

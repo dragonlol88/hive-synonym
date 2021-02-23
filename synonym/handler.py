@@ -8,8 +8,8 @@ from .connections import (
 )
 from .model import ModelBase
 from .response import Response
-from .exceptions import ResponseModelError
-
+from .exceptions import ResponseModelError, ConnectionError, DeserializerError,ResponseError
+from pydantic.error_wrappers import ValidationError
 
 class ClientHandler:
 
@@ -49,6 +49,18 @@ class ClientHandler:
 
         raise NotImplementedError
 
+    def evoke_failure_response(self, error):
+        return {'status': 'failure',
+                'data': '',
+                'message': error.error,
+                'details': error.info}
+
+    def evoke_sucess_response(self, response):
+        return {'status': 'success',
+                'data': response,
+                'message': '',
+                'details': ''}
+
     def _resolve_response(self, resp):
         raise NotImplementedError
 
@@ -81,25 +93,51 @@ class DBHandler(ClientHandler):
         action = self._get_action(action, conn)
         try:
             response = action(model, mapping, relations, **options)
-
             if is_flush:
                 conn.flush()
-
-            result = self._resolve_response(response,
-                                            response_model,
-                                            response_preprocess,
-                                            response_postprocess,
-                                            is_json)
+            result = self.make_response(response,
+                                        response_model,
+                                        response_preprocess,
+                                        response_postprocess,
+                                        is_json,
+                                        **options)
             conn.commit()
-        except Exception as e:
+        except Exception as error:
             """control error"""
-            #('Response Model must inherit %s' % Response)
-            raise Exception("나중에 다시 코딩하자")
+            conn.rollback()
+            if isinstance(error, ConnectionError):
+                response = error
+            else:
+                response = ConnectionError('db Error', error.args[0])
+            result = self.evoke_failure_response(response)
 
         conn.close()
         return result
 
-    def _resolve_response(self,
+    def make_response(self,
+                      response,
+                      response_model,
+                      response_preprocess,
+                      response_postprocess,
+                      is_json,
+                      **options):
+        try:
+            response = self._deserialize_response(response,
+                                                  response_model,
+                                                  response_preprocess,
+                                                  response_postprocess,
+                                                  is_json,
+                                                  **options)
+        except Exception as error:
+            raise ResponseError(error.error, error.info)
+
+        result = self.evoke_sucess_response(response)
+        return result
+
+
+
+
+    def _deserialize_response(self,
                           response: typing.Union[ModelBase, typing.List[ModelBase]],
                           response_model: typing.Optional['Response']=None,
                           response_preprocess=None,
@@ -113,19 +151,21 @@ class DBHandler(ClientHandler):
                 (isinstance(response_postprocess, typing.Callable) or
                  response_postprocess is None)):
             """ pre_process 와 pro_process는 callable object여야 한다."""
-            raise Exception
+            raise DeserializerError('Function type Error',
+                                    'pre or post processor must be callable object')
 
         response_model, origin = self._resolve_response_model(response_model)
 
         if origin and origin != type(response):
             """origin이 None이 아니라면 reponse모델과 타입이 같이야합"""
-            raise Exception
+            raise DeserializerError('Response type Error',
+                                    '%s is different type with %s' % (origin, response))
 
         try:
             # Pre-process so that it can be applied
             # in response model immediately
             if response_preprocess:
-                response = response_preprocess(response)
+                response = response_preprocess(response, **options)
 
             # convert to reponse model
             # It can be converted json formatting
@@ -134,9 +174,11 @@ class DBHandler(ClientHandler):
                                                   origin,
                                                   json)
             if response_postprocess:
-                response = response_postprocess(response)
-        except Exception:
-            raise Exception
+                response = response_postprocess(response, **options)
+        except Exception as e:
+            if isinstance(e, ValidationError):
+                raise ResponseModelError('%s Model Error' % e.model.__name__, e.json())
+            raise ResponseModelError('Response deserializer Error', e.args[0])
 
         return response
 
@@ -175,13 +217,13 @@ class DBHandler(ClientHandler):
         if not isinstance(responses, list):
             result = reponse_model.from_orm(responses)
             if json:
-                result = result.json()
+                result = result.dict()
             return result
 
         for response in responses:
             response = reponse_model.from_orm(response)
             if json:
-                response = response.json()
+                response = response.dict()
             result.append(response)
 
         return result

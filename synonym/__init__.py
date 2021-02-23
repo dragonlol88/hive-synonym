@@ -5,7 +5,7 @@ MODELS = {
     "Project"    : Project,
     "ProjectUser": ProjectUser,
     "User"       : User,
-    "Cartegory"  : Cartegory,
+    "Cartegory"  : Category,
     "Origin"     : Origin,
     "Synonym"    : Synonym
 }
