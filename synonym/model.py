@@ -16,7 +16,7 @@ from sqlalchemy import create_engine
 
 ModelBase = declarative_base()
 
-engine = create_engine('mysql+pymysql://ta_dev:elastic!@#@192.168.0.220/elastic_synonym')
+engine = create_engine('mysql+pymysql://sunny:chldydtjs1#@127.0.0.1/es-synonym')
 Session = sessionmaker(bind=engine)
 session = Session()
 
@@ -83,4 +83,4 @@ class Synonym(ModelBase):
     created_at = Column(DateTime, default=func.now(), nullable=False)
 
 
-# ModelBase.metadata.create_all(engine)
+ModelBase.metadata.create_all(engine)

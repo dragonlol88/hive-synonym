@@ -25,9 +25,9 @@ class DBClient(BaseClient):
     def hosts(self):
         ip = self.client.ip
         port = self.client.port
-        pwd = 'elastic!@#'
-        user_id = 'ta_dev'
-        dev = 'elastic_synonym'
+        pwd = 'chldydtjs1#'
+        user_id = 'sunny'
+        dev = 'es-synonym'
         url = f'mysql+pymysql://{user_id}:{pwd}@{ip}/{dev}'
         return url
 

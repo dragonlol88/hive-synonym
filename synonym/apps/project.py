@@ -44,10 +44,10 @@ def create_project_app():
         if not ismine:
             return get_all_project(pjt_name, page, size)
 
-        where.append(('user_id', 'on_off'))
-        on_off['user_id'] = True
+        where.append(('id', 'on_off'))
+        on_off['id'] = True
         request_params = {
-                        'user_id': user_id,
+                        'id': user_id,
                         'pjt_name': pjt_name,
                         'where': where,
                         'on_off': on_off,
