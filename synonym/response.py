@@ -64,6 +64,11 @@ class OriginResponse(Response):
     updated_at: datetime
     synonym: typing.List[SynonymResponse]
 
+
+class SynonymFileOutput(BaseModel):
+    origin_keyword: str
+    synm_keyword: typing.List[str]
+
 def project_find_pre_process(response, **options):
 
     pjt_name = options.pop("pjt_name", None)

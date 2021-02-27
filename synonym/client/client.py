@@ -1,13 +1,17 @@
 import typing
-from ..handler import DBHandler, ESHandler, ClientHandler
-from ..utils import db_params
 
+from ..handler import DBHandler, ESHandler, ClientHandler
+from ..utils import db_params, get_info_from_environ
 
 class BaseClient:
 
     def __init__(self, client, **options):
         self._client = client
         self.handler: ClientHandler = self.handler_class(self.hosts, **options)
+
+    @property
+    def ip(self):
+        return self._client.ip
 
     @property
     def client(self):
@@ -17,19 +21,39 @@ class BaseClient:
     def hosts(self):
         pass
 
+    def _from_env(self):
+        cli_prefix = self.__client_prefix__
+        try:
+            import os
+            info = get_info_from_environ(os.environ,
+                                         lambda K: K.startswith(cli_prefix))
+        except Exception:
+            info = None
+        return info
 
 class DBClient(BaseClient):
+
+    __client_prefix__ = 'DB'
     handler_class = DBHandler
 
     @property
     def hosts(self):
-        ip = self.client.ip
-        port = self.client.port
-        pwd = 'chldydtjs1#'
-        user_id = 'sunny'
-        dev = 'es-synonym'
-        url = f'mysql+pymysql://{user_id}:{pwd}@{ip}/{dev}'
+        info = self._from_env()
+        if 'db_ip' not in info:
+            if not self.ip:
+                raise EnvironmentError('Ip must be in environment variables')
+            info.update({'db_ip': self.ip})
+        url = self._make_url(info)
         return url
+
+    def _make_url(self, info):
+        url = self._url_form()
+        for key, value in info.items():
+            url = url.replace(key, value)
+        return url
+
+    def _url_form(self):
+        return 'mysql+pymysql://db_user:db_pwd@db_ip/db_name'
 
     @db_params(model='User')
     def user(self,
@@ -150,47 +174,8 @@ class DBClient(BaseClient):
     # relation 경우 어떻게 처리할지 로직을 추가해야 할 수도..
     # ordering 이 한 테이블로 어려울 경우 reponse model에 메소드(class method)를 추가해서 하자
 
-    @db_params(model='Origin',
-               order_by={'id': 'desc'})
-    def find_origin(self,
-                    action: str,
-                    model: 'MODEL',
-                    mapping: typing.Dict[str, typing.Any],
-                    relations: typing.Optional[typing.Dict[str, typing.Any]] = None,
-                    response_model: typing.Optional['SCHEMA'] = None,
-                    filter=None,
-                    order_by=None,
-                    **kwargs):
-        return self.handler.perform(action,
-                                    model=model,
-                                    mapping=mapping,
-                                    relations=relations,
-                                    response_model=response_model,
-                                    filter=filter,
-                                    order_by=order_by,
-                                    **kwargs)
-
-    @db_params(model='Project',
-               where=[('id', 'on_off')],
-               set=['pjt_name'])
-    def update_project(self,
-                    action: str,
-                    model: 'MODEL',
-                    mapping: typing.Dict[str, typing.Any],
-                    relations: typing.Optional[typing.Dict[str, typing.Any]] = None,
-                    response_model: typing.Optional['SCHEMA'] = None,
-                    filter=None,
-                    **kwargs):
-        return self.handler.perform(action,
-                                    model=model,
-                                    mapping=mapping,
-                                    relations=relations,
-                                    response_model=response_model,
-                                    filter=filter,
-                                    **kwargs)
-
-
 class ElasticsearchClient(BaseClient):
+    __client_prefix__ = 'ES'
     handler_class = ESHandler
 
     @property

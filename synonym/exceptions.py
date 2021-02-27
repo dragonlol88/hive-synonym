@@ -1,8 +1,7 @@
 # exception & error 정의
 
 
-__all__ = ['ConnectionError',
-           'InstanciateError',
+__all__ = ['DBConnectionError',
            'ImproperlyDataStructureError',
            'ResponseModelError',
            'FilterError',
@@ -18,32 +17,35 @@ class BaseException(Exception):
     def info(self):
         return self.args[1]
 
-class ConnectionError(BaseException):
 
-    """
-    related with sqlalchemy error
-    """
-
-class InstanciateError(ConnectionError):
-    """sqlalchemy Model Instanciate Error
-    """
-
-class FilterError(ConnectionError):
-    """sqlalchemy Improperly made filter error
-    """
-
-class OrderByError(ConnectionError):
-    """sqlalchemy Improperly made order by error
-    """
-
-class UpdateError(ConnectionError):
-    """sqlalchemy Improperly made order by error
-    """
+# db exceptions
+class DBConnectionError(BaseException):
+    """related with sqlalchemy error"""
 
 
+class DBFieldTypeError(DBConnectionError):
+    """related with sqlalchemy error"""
+
+
+class FilterError(DBConnectionError):
+    """sqlalchemy Improperly made filter error"""
+
+
+class OrderByError(DBConnectionError):
+    """sqlalchemy Improperly made order by error"""
+
+
+class UpdateError(DBConnectionError):
+    """sqlalchemy Improperly made order by error"""
+
+
+class DeleteError(DBConnectionError):
+    """sqlalchemy Improperly made order by error"""
+
+
+# response error
 class ImproperlyDataStructureError(BaseException):
-    """Improperly structured data error
-    """
+    """Improperly structured data error"""
 
 
 class ResponseError(BaseException):
@@ -52,6 +54,7 @@ class ResponseError(BaseException):
 
 class ResponseModelError(ResponseError):
     """Error related with Response Model"""
+
 
 class DeserializerError(ResponseError):
     """Deserializer Error"""

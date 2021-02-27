@@ -12,7 +12,7 @@ def create_project_app():
     @bp.route('/api/pjts', methods=['POST'])
     def create_project():
         params = request.get_json()
-        user_id = request.headers.get('user_id')
+        user_id = request.headers.get('id')
 
         user_ids = params.pop('members', None)
         assert user_ids
@@ -27,16 +27,14 @@ def create_project_app():
         response = db_client.project('insert', **request_params)
         return jsonify(response)
 
-
-
     @bp.route('/api/pjts', methods=['GET'])
     def get_project():
         ismine = int(request.args.get('ismine', None))
         pjt_name = request.args.get('q', None)
-        page = int(request.args.get('page', None))
-        size = int(request.args.get('size', None))
+        page = int(request.args.get('page', 0))
+        size = int(request.args.get('size', 0))
 
-        user_id = int(request.headers.get("user_id", None))
+        user_id = int(request.headers.get("id", None))
 
         where = []
         on_off = {}
@@ -51,6 +49,8 @@ def create_project_app():
                         'pjt_name': pjt_name,
                         'where': where,
                         'on_off': on_off,
+                        'page': page,
+                        'size': size,
                         'response_model': typing.List[ProjectResponse],
                         'response_preprocess': project_find_pre_process
                     }
@@ -71,6 +71,8 @@ def create_project_app():
                                pjt_name=pjt_name,
                                where=where,
                                on_off=on_off,
+                               page=page,
+                               size=size,
                                response_model=typing.List[ProjectResponse])
         return jsonify(r)
 

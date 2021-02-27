@@ -2,23 +2,15 @@ from sqlalchemy import (
     Column,
     Integer,
     String,
-    Text,
     DateTime,
     ForeignKey,
-    UniqueConstraint,
     func
 )
-
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy import create_engine
+
 
 ModelBase = declarative_base()
-
-engine = create_engine('mysql+pymysql://sunny:chldydtjs1#@127.0.0.1/es-synonym')
-Session = sessionmaker(bind=engine)
-session = Session()
 
 
 class User(ModelBase):
@@ -37,7 +29,6 @@ class ProjectUser(ModelBase):
     project = relationship('Project', uselist=False, cascade="all,delete")
 
 
-
 class Project(ModelBase):
     __tablename__ = 'tbl_pjt_mocking'
     id = Column(Integer, autoincrement=True, primary_key=True)
@@ -50,6 +41,7 @@ class Project(ModelBase):
     origin = relationship('Origin', uselist=True, cascade="all,delete")
     category = relationship('Category', uselist=True, cascade="all,delete")
 
+
 class Category(ModelBase):
     __tablename__ = 'tbl_category_mocking'
     id = Column(Integer, autoincrement=True, primary_key=True)
@@ -59,6 +51,7 @@ class Category(ModelBase):
     updated_at = Column(DateTime, default=func.now(), nullable=True)
     origin = relationship('Origin', uselist=True, cascade="all,delete")
     synonym = relationship('Synonym', uselist=True, cascade="all,delete")
+
 
 class Origin(ModelBase):
     __tablename__ = 'tbl_origin_mocking'
@@ -72,6 +65,7 @@ class Origin(ModelBase):
     synonym = relationship('Synonym', uselist=True, cascade="all,delete",
                            foreign_keys='[Synonym.origin_id]')
 
+
 class Synonym(ModelBase):
     __tablename__ = 'tbl_synonym_mocking'
     # pjt_id, category_id 같이
@@ -81,6 +75,3 @@ class Synonym(ModelBase):
     origin_id = Column(Integer, ForeignKey('tbl_origin_mocking.id'))
     synm_keyword = Column(String(128), nullable=False)
     created_at = Column(DateTime, default=func.now(), nullable=False)
-
-
-ModelBase.metadata.create_all(engine)

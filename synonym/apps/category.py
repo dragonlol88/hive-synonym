@@ -29,8 +29,8 @@ def create_category_app():
         on_off = {}
 
         category_name = request.args.get('q', None)
-        page = int(request.args.get('page', None)) #int
-        size = int(request.args.get('size', None)) #int
+        page = int(request.args.get('page', 0)) #int
+        size = int(request.args.get('size', 0)) #int
 
         where.append(('pjt_id', 'on_off'))
         on_off['pjt_id'] = True

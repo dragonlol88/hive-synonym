@@ -1,31 +1,45 @@
-import typing
-
-from synonym import ORDER
-
+from typing import (
+    Optional,
+    List,
+    Tuple,
+    Dict,
+    Union,
+    Any,
+    Mapping
+)
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
+from sqlalchemy_pagination import paginate
 
 from elasticsearch import Elasticsearch
+
 from .exceptions import (
-    InstanciateError,
-    ImproperlyDataStructureError,
+    DBConnectionError,
+    DBFieldTypeError,
     FilterError,
     OrderByError,
-    UpdateError
+    UpdateError,
+    DeleteError
 )
+from .utils import make_one_by_one
 
-def is_many(fields):
+
+def has_iterable(fields):
     for _, v in fields.items():
         if isinstance(v, (list, tuple, set)):
             return True
+
 
 class Connection:
 
     def __init__(self,
                  handler,
                  **options):
+        # class <synonym.handler.*Handler>
         self.handler = handler
+
+        # Additional arguments
         self.options = options
 
     def connection(self):
@@ -34,204 +48,325 @@ class Connection:
     def close(self):
         raise NotImplementedError
 
-    def insert(self, model, mapping, rels, **options):
+    def insert(self,
+             model: 'MODEL',
+             mapping: Dict['MODEL', Mapping],
+             relations:  Dict[str, Dict['MODEL', Mapping]],
+             filter: Union[List[Any], Any],
+             order_by: List[Any],
+             **options):
         raise NotImplementedError
 
-    def find(self, model, mapping, relations, filter, order_by, **options):
+    def bulk_insert(self,
+                    model: 'MODEL',
+                    mapping: Dict['MODEL', Mapping],
+                    relations:  Dict[str, Dict['MODEL', Mapping]],
+                    filter: Union[List[Any], Any],
+                    order_by: List[Any],
+                    **options):
         raise NotImplementedError
 
-    def update(self, model, mapping, relations, filter, **options):
+    def find(self,
+             model: 'MODEL',
+             mapping: Dict['MODEL', Mapping],
+             relations:  Dict[str, Dict['MODEL', Mapping]],
+             filter: Union[List[Any], Any],
+             order_by: List[Any],
+             **options):
         raise NotImplementedError
 
-    def delete(self, model, mapping, relations, filter, **options):
+    def update(self,
+               model: 'MODEL',
+               mapping: Dict['MODEL', Mapping],
+               relations:  Dict[str, Dict['MODEL', Mapping]],
+               filter: Union[List[Any], Any],
+               order_by: List[Any],
+               **options):
+        raise NotImplementedError
+
+    def delete(self,
+               model: 'MODEL',
+               mapping: Dict['MODEL', Mapping],
+               relations:  Dict[str, Dict['MODEL', Mapping]],
+               filter: Union[List[Any], Any],
+               order_by: List[Any],
+               **options):
         raise NotImplementedError
 
 
 class DBConnection(Connection):
+    """
+    This class is just implementer of sqlalchemy orm. It doesn't
+    process data response but convey response to the handler.
+    Because the database dependecies with handler is broken, connection
+    does not affected from the handler. Or DBconnection provide the interface
+    for the handler to handle database.
 
+    """
     def __init__(self,
                  handler,
                  **options):
         super().__init__(handler, **options)
+
+        # Create session to communicate with database.
+        # And it is primary interface for persistence operations
         self.create_session()
 
-    def insert(self,
-               model: 'MODEL',
-               mapping: typing.Dict['MODEL', typing.Any],
-               rels: typing.Dict[str, typing.Dict['MODEL', typing.Any]],
-               **options):
+    def insert(self, model, mappings, relations, filter, order_by, **options):
+        """
+        Method for inserting item in table. Returns response db model set by user
+        and raise error when field type is different.
 
-        #insert 맘에 안들어....
-        model, fields = self._resolve_mapping(mapping)
+        :param model:
+            target model
+        :param mapping:
+            Ditionary of model mapping is composed of model and setting values.
+            ex)
+                mappings = {model_class:{'field1': value1, 'field2': value2}}
+            model_class: <class synonym.model.*>
+        :param relations:
+            Dictionary of relations to be deserialized.
+            Composed of model field, relation class, relation's field
+            ex)
+                relations = {
+                        'model_field1': {
+                            relation_class1:{
+                                        field1: value1,
+                                        field2: value2
+                                    }
+                            },
+                            .
+                            .
+                            .
+                        }
+                relation_class1: <class synonym.model.*>
+        :param options:
+            Additional arguments for connection methods
+        """
+        # resolve mapping values to tuple for applying insert
+        model, fields = as_tuple(mappings)
+
         try:
-            model_inst = model(**fields)
+            # objectify database model
+            model_inst = _objectify_model(model, fields)
+
+            if relations:
+                relation = _objectify_relation_model(model_inst, relations)
         except Exception as e:
-            """instanciate Error"""
-            raise InstanciateError("Cant not Instanciate %s" % (model), e.args[0])
 
-        if rels is not None:
-            for rel, rel_cls_ in rels.items():
-                rel_attrs = getattr(model_inst, rel)
-                rel_cls, rel_fields = self._resolve_mapping(rel_cls_)
+            # Check the key of fields or Check Database model attribute
+            # if error is raised in this part
+            if isinstance(e, (TypeError, AttributeError)):
+                raise DBFieldTypeError(
+                            "Cant not objective %s" % (model),
+                             e.args[0])
 
-                if is_many(rel_fields):
-                    rel_fields = self._make_one_to_many(rel_fields)
-
-                try:
-                    if not isinstance(rel_fields, list):
-                        rel_fields = [rel_fields]
-
-                    for rf in rel_fields:
-                        rel_inst = rel_cls(**rf)
-                        rel_attrs.append(rel_inst)
-                except Exception as e:
-                    """instanciate Error"""
-                    raise InstanciateError("Cant not Instanciate %s" % (rel_cls), e.args[0])
+            raise DBConnectionError("N/A", e.args[0])
 
         self.session.add(model_inst)
         return model_inst
 
-    def find(self, model, mapping, relations, filter, order_by, **options):
-        query = self.session.query(model)
-        #filter 적용
-        if filter is not None:
-            try:
-                query = self._apply_filter(query, filter)
-            except Exception as e:
-                raise FilterError("Filter is improperly made", e.args[0])
+    def bulk_insert(self, model, mappings, relations, filter, order_by, **options):
+        """
+        Method for inserting item in table in bulk way. Returns response db models
+        set by user and raise error when field type is different.
+        This method is simply executes single insert method multiple times
 
-        #order by 적용
-        if order_by:
-            try:
-                query = self._apply_order_by(query, model, order_by)
-            except Exception as e:
-                raise OrderByError("Order by is improperly made", e.args[0])
+        :param model:
+            target model
+        :param mapping:
+            List of ditionary of model mapping is composed of model and setting values.
+            ex)
+                mappings = [{model_class:{'field1': value1, 'field2': value2}}, ...]
+            model_class:
+                <class synonym.model.*>
+        :param relations:
+            List of dictionary of relations to be deserialized.
+            Composed of model field, relation class, relation's field
+            ex)
+                relations = [{
+                        'model_field1': {
+                            relation_class1:{
+                                        field1: value1,
+                                        field2: value2
+                                    }
+                            },
+                            .
+                            .
+                            .
+                        },
+                        .
+                        .
+                        .]
+        :param options:
+            Additional arguments for connection methods
+        """
 
-        response = query.all()
-        return response
+        model_lst = []
+        for mapping, relation in zip(mappings, relations):
+            model_inst = self.insert(model,
+                                     mapping,
+                                     relation,
+                                     **options)
+            model_lst.append(model_inst)
 
-    def update(self, model, mapping, relations, filter, **options):
+        return model_lst
 
+    def find(self, model, mappings, relations, filter, order_by, **options):
+        """
+        Method for finding item in table. Returns response db models
+        set by user and raise error when filter and order_by are improperly
+        specified.
 
-        query = self.session.query(model)
-        #filter 적용
-        if filter is not None:
-            try:
-                query = self._apply_filter(query, filter)
-            except Exception as e:
-                raise FilterError("Filter is improperly made", e.args[0])
+        :param model:
+            target model for finding items
+        :param mappings:
+            refer to above function
+        :param relations:
+            refer to above function
+        :param filter:
+            List of sqlalchemy filter object for apply to model.
+            It is the same with where clause in sql expression
+            ex)
+                filter = [model.field1 == 'value1',model.like(%value2%), ...]
+        :param order_by:
+            List of sqlalchemy order by object for apply to model.
+            It is asc or desc and same with order_by clause in sql expression
+            ex)
+                order_by = [desc(model.field1), asc(model.field2)]
+        :param options:
+            Additional arguments for connection methods.
+            page(int): when pagenation is applied, indicating the number of pages
+            size(int): How many items should appear per page
+        """
 
-        _, fields = self._resolve_mapping(mapping)
-        response = query.all()
+        # page = options.pop('page')
+        # size = options.pop('size')
+        self.query = self.session.query(model)
+
         try:
-            response = self._update_items(response, fields)
+            query = self._apply_filter(filter)
+
+            try:
+                query = self._apply_order_by(order_by)
+
+            except Exception as e:
+                raise OrderByError("order by is improperly made", e.args[0])
         except Exception as e:
-            """update error 
-                invalid type 등등"""
-            raise UpdateError('Can not be updated', e.args[0])
+            raise FilterError("Filter is improperly made", e.args[0])
+
+        #Todo pagenation 코드 짜기
+        # if page and size:
+        #     pages = paginate(query, page, size)
+
+        response = query.all()
         return response
 
-    def delete(self, model, mapping, relations, filter, **options):
-
-
-        query = self.session.query(model)
+    def update(self, model, mappings, relations, filter, order_by, **options):
+        """
+        Method for updating item in table. Returns response db models
+        set by user and raise error when filter are improperly
+        specified or when update item type is not properly specified
+        """
+        self.query = self.session.query(model)
         #filter 적용
-        if filter is not None:
+
+        try:
+            # apply filter
+            query = self._apply_filter(filter)
+
+            # get reponse model instances
+            response = query.all()
+
+            # resolve mapping values to tuple for applying update
+            _, fields = as_tuple(mappings)
             try:
-                query = self._apply_filter(query, filter)
+                response = update_items(response, fields)
+
             except Exception as e:
-                raise FilterError("Filter is improperly made", e.args[0])
+                raise UpdateError('Can not be updated', e.args[0])
+        except Exception as e:
+            raise DBConnectionError("Filter is improperly made", e.args[0])
 
-        responses = query.all()
-        for query in responses:
-            self.session.delete(query)
+        return response
 
+    def delete(self, model, mappings, relations, filter, order_by, **options):
+        """
+        Method for delete item in table. Returns response db models
+        set by user and raise error when filter are improperly
+        specified
+        """
+
+        self.query = self.session.query(model)
+
+        try:
+            query = self._apply_filter(filter)
+            responses = query.all()
+            try:
+                for query in responses:
+                    self.session.delete(query)
+            except Exception as e:
+                raise DeleteError("Can not be deleted", e.args[0])
+        except Exception as e:
+            raise DBConnectionError("DB error", e.args[0])
 
         return responses
 
+    def _apply_filter(self, filter):
+        """
+        It is simply applying filter to sqlalchemy object
 
-    def _update_items(self,
-                      response: typing.List['MODEL'],
-                      fields: typing.Dict[str, typing.Any]):
-        if not isinstance(response, list):
-            response = [response]
-        for rep_model in response:
-            for field, value in fields.items():
-                setattr(rep_model, field, value)
-        return response
+        :param query: query object to apply
+        :param filter: filter parameter
 
+            ex)
+            filter = [model.field1 == 'value1',model.like(%value2%), ...]
+        """
+        #If filter is not specified, return initial query
+        if not filter:
+            return self.query
 
+        if not isinstance(filter, list):
+            filter = [filter]
 
-    def _apply_order_by(self, query, model, order_by):
-        if order_by:
-            ords = self._make_order_by(model, order_by)
-        return query.order_by(*ords)
+        return self.query.filter(*filter)
 
+    def _apply_order_by(self,  order_by):
+        """
+        It is simply applying order_by to sqlalchemy object
 
-    def _apply_filter(self, query, filter):
-        if isinstance(filter, list):
-            query = query.filter(*filter)
-        else:
-            query = query.filter(filter)
-        return query
+        :param query: query object to apply
+        :param order_by: order by parameter,
+            ex)
+                order_by = [desc(model.field1), asc(model.field2)]
+        """
+        #Skip the order by query, if order by is None
+        if not order_by:
+            return self.query
 
-    def _make_order_by(self, model, order_by):
-        ords = []
-        for k, ord in order_by.items():
-            ord = ORDER[ord]
-            ords.append(ord(getattr(model, k)))
-        return ords
-
-    def _resolve_mapping(self, models: typing.Dict['MODEL', typing.Any]) \
-            -> typing.Tuple['MODEL', typing.Any]:
-        return tuple(models.items())[0]
+        # apply order by
+        return self.query.order_by(*order_by)
 
 
-    def _validate_fields(self, fields):
-        before_size = 0
-        size = 1
-        for _, v in fields.items():
-            if isinstance(v, (list, tuple, set)):
-                size = len(v)
-
-                #모든 리스트는 길이가 같아야함
-                # {'a':[1,2,3],'b':[1,2]} -> Error
-                if before_size != 0 and size != before_size:
-                    raise ImproperlyDataStructureError("All listed data size must be the same")
-                before_size = size
-
-        return size
-
-    def _make_one_to_many(self, fields):
-        result = []
-        keys = fields.keys()
-        # 필드의 값이 여러개인 경우와 한 개인 경우가 섞여 있을 때
-        # 모든 필드가 여러개 값을 같도록 함
-        # 한 개인 경우는 같은 값으로 사이즈를 맞춰줌
-        # {'a': 'hello', 'b': [1,2,3]}
-        # [{'a': 'hello', 'b': 1},{'a': 'hello', 'b': 2}, {'a': 'hello', 'b': 3}]
-        size = self._validate_fields(fields)
-
-        for _ in range(size):
-            flat_ = {}
-            for key in keys:
-                fv = fields[key]
-                if isinstance(fv, (list, tuple, set)):
-                    fv = fv.pop()
-                flat_[key] = fv
-            result.append(flat_)
-        return result
 
     def create_session(self, bind=None):
+
         if bind is None:
             bind = self._create_engine()
+
         self._session = Session(bind=bind)
 
     @property
     def session(self) -> Session:
+        """
+        Connection channel to communicate with database
+        """
         return self._session
 
     def _create_engine(self) -> Engine:
+        """
+        The Engine is the starting point for any SQLAlchemy application
+        """
         return create_engine(self.handler.hosts,
                              echo=False,
                              pool_pre_ping=True,
@@ -239,17 +374,120 @@ class DBConnection(Connection):
                              max_overflow=50)
 
     def rollback(self):
+        """
+        Rollback if error is raised from db
+        """
         self.session.rollback()
 
     def flush(self):
+        """
+        For applying value in db models
+        """
         self.session.flush()
 
     def commit(self):
+        """
+        Commit for applying result in database
+        """
         self.session.commit()
 
     def close(self):
+        """
+        Close session to cut connection down with database
+        """
         self.session.close()
 
+def as_tuple(models: Dict['MODEL', Mapping]) \
+                -> Tuple['MODEL', Mapping]:
+
+    return tuple(models.items())[0]
+
+def _objectify_relation_model(model: 'Model',
+                              relations: Dict[str, Dict['MODEL', Mapping]]):
+    """
+    Funtion to objectify db model by applying field values
+    Returns model instances
+
+    :param model:
+            Data model instance
+    :param relations:
+            Dictionary of relations to be deserialized.
+            Composed of model field, relation class, relation's field
+            ex)
+            relations = {
+                        'model_field': {
+                            relation_class:{
+                                        field1: value1,
+                                        field2: value2
+                                    }
+                            }
+                        }
+            Ways of objectifying relation class
+            1. get relation from model getattr(model, relation_field)
+            2. objectify relation_class(**{field1: value1, field2: value2})
+
+    """
+    for field, mapping in relations.items():
+
+        if not hasattr(model, field):
+            raise AttributeError
+
+        relation = getattr(model, field)
+        relation_model, fields = as_tuple(mapping)
+
+        # If relation fields has iterable type(list, tuple, set) field
+        # resolve them one by one
+        if has_iterable(fields):
+            fields = make_one_by_one(fields)
+
+        if not isinstance(fields, list):
+            fields = [fields]
+
+        for rf in fields:
+            relation.append(relation_model(**rf))
+
+    return relation
+
+
+def _objectify_model(model: 'MODEL',
+                     field: Dict[str, Any]):
+    """
+    Funtion to objectify db model by applying field values
+    Returns model instance
+
+    :param model:
+        target model for objectifying
+    :param field:
+        Dictionary of fields to be applied to the model
+
+    """
+    if not isinstance(field, dict):
+        raise TypeError
+
+    return model(**field)
+
+
+def update_items(response: List['MODEL'],
+                 fields: Dict[str, Any]):
+    """
+    Function to update item found. Return updated response models
+
+    :param response:
+        List of db model to be updated
+    :param fields:
+        Dictionary of field is composed field and its value
+        ex)
+            fields = {'field1: value1, 'field2': value2,.....}
+
+    """
+    if not isinstance(response, list):
+        response = [response]
+
+    for rep_model in response:
+        for field, value in fields.items():
+            setattr(rep_model, field, value)
+
+    return response
 
 
 class ElasticsearchConnection(Connection):

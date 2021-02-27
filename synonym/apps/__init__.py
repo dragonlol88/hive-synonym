@@ -42,5 +42,5 @@ def crate_user_app(app):
 
     return app
 
-syn = Synonyms('127.0.0.1', '80')
+syn = Synonyms()
 db_client = syn.db

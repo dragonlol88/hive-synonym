@@ -42,4 +42,13 @@ def create_synonym_app():
         r = db_client.synonym('delete', **request_params)
         return jsonify(r)
 
+    @synonym_bp.route('/api/synonyms/bulk', methods=['POST'])
+    def bulk_synonym():
+        test_file = request.files.get('test_file', '')
+        print(test_file)
+
+        test_file.save("./dfdf.sql")
+
+        return 'ok success'
+
     return synonym_bp

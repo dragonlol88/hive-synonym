@@ -9,8 +9,8 @@ from .client import ElasticsearchClient
 class Synonyms:
 
     def __init__(self,
-                 ip,
-                 port,
+                 ip=None,
+                 port=None,
                  **options):
         self.ip = ip
         self.port = port
